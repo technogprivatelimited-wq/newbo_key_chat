@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Online Chat</title>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-storage.js"></script>
+
+<style>
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  font-family:Segoe UI,Arial;
+  background:linear-gradient(to bottom,#e5ddd5,#f0f0f0);
+  color:#000;
+}
+#top{
+  background:#075e54;
+  color:#fff;
+  padding:14px 10px;
+  text-align:center;
+  font-weight:bold;
+  position:fixed;
+  width:100%;
+  top:0;
+  z-index:10;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+#adminStatus{font-size:12px;margin-left:8px;}
+#typing{font-size:12px;color:#fff;margin-top:2px;}
+#adminLogoTop{width:30px;height:30px;border-radius:50%;margin-left:6px;display:none;}
+
+#nameBox{
+  text-align:center;
+  padding:60px 20px;
+}
+#nameBox input{
+  padding:14px;
+  width:80%;
+  border-radius:25px;
+  border:1px solid #ccc;
+  font-size:16px;
+}
+#nameBox button{
+  margin-top:20px;
+  padding:14px 25px;
+  border:none;
+  border-radius:25px;
+  background:#25d366;
+  color:#fff;
+  font-weight:bold;
+  cursor:pointer;
+  font-size:16px;
+}
+
+#chatBox{display:none;}
+#chat{
+  margin-top:100px;
+  height:72vh;
+  overflow-y:auto;
+  padding:10px;
+  scroll-behavior:smooth;
+}
+
+.me,.other,.admin{
+  max-width:70%;
+  padding:12px;
+  margin:8px;
+  border-radius:20px;
+  font-size:15px;
+  word-wrap:break-word;
+  box-shadow:0 2px 3px rgba(0,0,0,0.2);
+  position:relative;
+}
+
+.me{
+  background:#dcf8c6;
+  margin-left:auto;
+  border-bottom-right-radius:5px;
+}
+
+.other{
+  background:#fff;
+  margin-right:auto;
+  border-bottom-left-radius:5px;
+}
+
+.admin{
+  background:#ff9800;
+  margin-left:auto;
+  border-bottom-right-radius:5px;
+  font-weight:bold;
+}
+
+.name{
+  font-size:11px;
+  font-weight:bold;
+  margin-bottom:4px;
+  display:flex;
+  align-items:center;
+}
+
+.time{
+  font-size:10px;
+  color:#555;
+  position:absolute;
+  bottom:4px;
+  right:8px;
+}
+
+#input{
+  display:flex;
+  padding:10px;
+  background:#f0f0f0;
+  position:fixed;
+  bottom:0;
+  width:100%;
+  align-items:center;
+}
+#input input{
+  flex:1;
+  padding:12px 15px;
+  border-radius:25px;
+  border:1px solid #ccc;
+  font-size:15px;
+}
+#input button{
+  margin-left:8px;
+  border:none;
+  border-radius:50%;
+  width:48px;
+  height:48px;
+  background:#25d366;
+  font-size:20px;
+  cursor:pointer;
+  color:#fff;
+}
+
+audio{width:200px;margin-top:5px;}
+img.adminLogoMsg{width:22px;height:22px;border-radius:50%;vertical-align:middle;margin-right:6px;}
+</style>
+</head>
+
+<body>
+
+<div id="top">
+  online chat
+  <img id="adminLogoTop" src="admin.png" alt="Admin">
+  <div id="adminStatus">Admin Offline ❌</div>
+  <div id="typing"></div>
+</div>
+
+<div id="nameBox">
+  <h2>Enter Full Name</h2>
+  <input id="nameInput" placeholder="First Last">
+  <br>
+  <button onclick="saveName()">Continue</button>
+</div>
+
+<div id="chatBox">
+  <div id="chat"></div>
+  <div id="input">
+    <input id="msg" placeholder="Type a message">
+    <button onclick="startVoice()">🎤</button>
+    <button onclick="stopVoice()">⏹</button>
+    <button onclick="send()">➤</button>
+  </div>
+</div>
+
+<script>
+/* Firebase Config */
+firebase.initializeApp({
+  apiKey:"AIzaSyA0y2mQQ7enaic4pNZHHn4_zu54y9kg69Y",
+  databaseURL:"https://techno-5303a-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId:"techno-5303a",
+  storageBucket:"techno-5303a.firebasestorage.app"
+});
+
+const db=firebase.database();
+const storage=firebase.storage();
+const uid=localStorage.getItem("uid")||Date.now().toString();
+localStorage.setItem("uid",uid);
+let fullName=localStorage.getItem("fullName");
+const room="public";
+
+/* Admin online status */
+db.ref("admin/status").on("value",s=>{
+  if(s.val()==="online"){
+    adminStatus.innerText="Admin Online 🟢";
+    adminLogoTop.style.display="inline-block";
+  } else {
+    adminStatus.innerText="Admin Offline ❌";
+    adminLogoTop.style.display="none";
+  }
+});
+
+/* Name Registration */
+if(fullName) showChat();
+function saveName(){
+  const v=nameInput.value.trim();
+  if(!v.includes(" ") || v.length<5) return alert("Enter full name (First Last)");
+  fullName=v;
+  localStorage.setItem("fullName",v);
+  showChat();
+}
+function showChat(){
+  nameBox.style.display="none";
+  chatBox.style.display="block";
+}
+
+/* Typing Indicator */
+msg.oninput=()=>{
+  db.ref("typing/"+room+"/"+uid).set(fullName);
+  setTimeout(()=>db.ref("typing/"+room+"/"+uid).remove(),1000);
+};
+db.ref("typing/"+room).on("value",s=>{
+  typing.innerText=s.exists()?"Someone is typing...":"";
+});
+
+/* Send Text */
+function send(){
+  if(!msg.value) return;
+  db.ref("rooms/"+room).push({
+    uid,name:fullName,text:msg.value,time:Date.now()
+  });
+  msg.value="";
+}
+
+/* Voice Message */
+let rec,chunks=[];
+function startVoice(){
+  navigator.mediaDevices.getUserMedia({audio:true}).then(s=>{
+    rec=new MediaRecorder(s);
+    chunks=[];
+    rec.start();
+    rec.ondataavailable=e=>chunks.push(e.data);
+  });
+}
+function stopVoice(){
+  if(!rec) return;
+  rec.stop();
+  rec.onstop=()=>{
+    const b=new Blob(chunks,{type:"audio/webm"});
+    const r=storage.ref("voice/"+Date.now()+".webm");
+    r.put(b).then(()=>r.getDownloadURL().then(u=>{
+      db.ref("rooms/"+room).push({
+        uid,name:fullName,audio:u,time:Date.now()
+      });
+    }));
+  };
+}
+
+/* Receive Messages */
+db.ref("rooms/"+room).limitToLast(100).on("child_added",s=>{
+  render(s.key,s.val());
+});
+db.ref("rooms/"+room).on("child_changed",s=>{
+  document.getElementById(s.key)?.remove();
+  render(s.key,s.val());
+});
+db.ref("rooms/"+room).on("child_removed",s=>{
+  const el=document.getElementById(s.key);
+  if(el) el.remove();
+});
+
+function render(id,d){
+  const div=document.createElement("div");
+  div.id=id;
+
+  let logoHTML='';
+  if(d.name.toLowerCase()==="admin"){
+    div.className="admin";
+    logoHTML='<img src="admin.png" class="adminLogoMsg">';
+  } else {
+    div.className=d.uid==uid?"me":"other";
+  }
+
+  let time=new Date(d.time);
+  let hTime = `${time.getHours()}:${time.getMinutes().toString().padStart(2,'0')}`;
+  let h=`<div class="name">${logoHTML}${d.name}</div>`;
+  if(d.text) h+=d.text;
+  if(d.audio) h+=`<br><audio controls src="${d.audio}"></audio>`;
+  h+=`<div class="time">${hTime}</div>`;
+
+  div.innerHTML=h;
+  chat.appendChild(div);
+  chat.scrollTop=chat.scrollHeight;
+}
+</script>
+
+</body>
+</html>
